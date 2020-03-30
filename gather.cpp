@@ -22,16 +22,16 @@ using namespace std;
 typedef struct __uni_configs {
 	unsigned int port;
 	unsigned int timeout;
-	unsigned int max_clients;
+	unsigned long max_clients;
 	char script_registered[512*1024];
 	char script_heartbeat[512*1024];
 	char script_linked[512*1024];
+    char script_traverse[512*1024];
 } uni_configs;
 
 typedef struct __uni_runs {
 	uv_mutex_t lock;
 	unsigned short timing;
-	unsigned short script;
 	unsigned long clients;
 	uv_connect_t *connection;
 } uni_runs;
@@ -584,7 +584,7 @@ static void on_new_connection(uv_stream_t *server, int status) {
 			return;
 		}
 		//新客户端连接后需要的操作
-		if(runs.script) {
+		if(configs.script_linked[0]) {
 			uni_new_client *work_req = (uni_new_client *)malloc(sizeof(*work_req));
 			if(!work_req) {
 				fprintf(stderr, "No memory for work_req\n");
@@ -613,6 +613,47 @@ static void on_new_connection(uv_stream_t *server, int status) {
   */
 static void on_after_traverse(uv_work_t *req, int status) {
 	free(req);
+    
+    if(configs.script_traverse[0]) {
+        //新建虚拟机实例
+        lua_State *L = luaL_newstate();
+        if(!L) {
+            return;
+        }
+        //初始化虚拟机
+        luaL_openlibs(L);
+        
+        //执行脚本
+        //压入客户端名称
+        lua_pushstring(L, "all");
+        lua_setglobal(L, "name");
+        //压入客户端标识
+        lua_pushstring(L, "");
+        lua_setglobal(L, "id");
+        luaL_dostring(L, configs.script_traverse);
+        
+        //遍历
+        for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
+            //没有客户端名称不处理
+            if(!it->second.name[0]) {
+                continue;
+            }
+            
+            //清空lua栈
+            lua_settop(L, 0);
+            //压入客户端名称
+            lua_pushstring(L, it->second.name);
+            lua_setglobal(L, "name");
+            //压入客户端标识
+            lua_pushfstring(L, "%llu", (unsigned long long)it->first.client);
+            lua_setglobal(L, "id");
+            //执行脚本
+            luaL_dostring(L, configs.script_traverse);
+        }
+        
+        //关闭虚拟机实例
+        lua_close(L);
+    }
 }
 
 /**
@@ -676,9 +717,9 @@ static void on_timer_triggered(uv_timer_t *handle) {
 
 
 /**
-  * @brief  参数列表 -> 监听端口 上行通道 超时分钟数 最大客户端数量 注册脚本 心跳脚本 连接脚本
-  * .\gather.exe 4056 \\?\pipe\echo.sock 5 10000 script/register.lua script/heartbeat.lua script/connect.lua
-  * ./gather 4056 /tmp/echo.sock 5 10000 script/register.lua script/heartbeat.lua script/connect.lua
+  * @brief  参数列表 -> 监听端口 上行通道 超时分钟数 最大客户端数量 注册脚本 心跳脚本 连接脚本 遍历脚本
+  * .\gather.exe 4056 \\?\pipe\echo.sock 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
+  * ./gather 4056 /tmp/echo.sock 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
   */
 int main(int argc, char **argv) {
 	struct sockaddr_in addr;
@@ -689,6 +730,7 @@ int main(int argc, char **argv) {
 	FILE *fp;
 	int rc;
 	
+    memset((void *)&configs, 0, sizeof(configs));
 	memset((void *)&runs, 0, sizeof(runs));
 	
 	//创建事件轮询
@@ -745,7 +787,6 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 		else {
-			memset(configs.script_registered, 0, sizeof(configs.script_registered));
 			if(fread(configs.script_registered, 1, fl, fp) != fl) {
 				fclose(fp);
 				fprintf(stderr, "Invalid script file\n");
@@ -770,7 +811,6 @@ int main(int argc, char **argv) {
 			return 1;
 		}
 		else {
-			memset(configs.script_heartbeat, 0, sizeof(configs.script_heartbeat));
 			if(fread(configs.script_heartbeat, 1, fl, fp) != fl) {
 				fclose(fp);
 				fprintf(stderr, "Invalid script file\n");
@@ -796,14 +836,34 @@ int main(int argc, char **argv) {
 				return 1;
 			}
 			else {
-				memset(configs.script_linked, 0, sizeof(configs.script_linked));
 				if(fread(configs.script_linked, 1, fl, fp) != fl) {
 					fclose(fp);
 					fprintf(stderr, "Invalid script file\n");
 					return 1;
 				}
 				fclose(fp);
-				runs.script = 0xff;
+			}
+		}
+	}
+
+	//脚本文件 客户端遍历
+	if(argc >= 9) {
+		if((fp = fopen(argv[8], "rb"))) {
+			fseek(fp,0,SEEK_END);
+			int fl = ftell(fp);
+			fseek(fp,0,SEEK_SET);
+			if((fl <= 0) || (fl >= sizeof(configs.script_traverse))) {
+				fclose(fp);
+				fprintf(stderr, "Invalid script file\n");
+				return 1;
+			}
+			else {
+				if(fread(configs.script_traverse, 1, fl, fp) != fl) {
+					fclose(fp);
+					fprintf(stderr, "Invalid script file\n");
+					return 1;
+				}
+				fclose(fp);
 			}
 		}
 	}
