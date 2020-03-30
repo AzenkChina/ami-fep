@@ -50,7 +50,7 @@ void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 		//如果是透传，则返回确认报文
 		if(header.flag == PH_TRANSMIT) {
 			write_req_t *req = (write_req_t*) malloc(sizeof(write_req_t));
-			req->buf.len = sizeof(header) + strlen("received") + 1;
+			req->buf.len = sizeof(header) + strlen("Server received.") + 1;
 			req->buf.base = (char *)malloc(req->buf.len);
 			if(!req->buf.base) {
 				free(buf->base);
@@ -58,7 +58,7 @@ void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 			}
 
 			memcpy(req->buf.base, &header, sizeof(header));
-			strcpy(req->buf.base + sizeof(header), "received");
+			strcpy(req->buf.base + sizeof(header), "Server received.");
 			uv_write((uv_write_t *)req, client, &req->buf, 1, echo_write);
 		}
 	}

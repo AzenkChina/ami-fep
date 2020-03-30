@@ -26,7 +26,7 @@ typedef struct __uni_configs {
 	char script_registered[512*1024];
 	char script_heartbeat[512*1024];
 	char script_linked[512*1024];
-    char script_traverse[512*1024];
+	char script_traverse[512*1024];
 } uni_configs;
 
 typedef struct __uni_runs {
@@ -614,46 +614,46 @@ static void on_new_connection(uv_stream_t *server, int status) {
 static void on_after_traverse(uv_work_t *req, int status) {
 	free(req);
     
-    if(configs.script_traverse[0]) {
-        //新建虚拟机实例
-        lua_State *L = luaL_newstate();
-        if(!L) {
-            return;
-        }
-        //初始化虚拟机
-        luaL_openlibs(L);
-        
-        //执行脚本
-        //压入客户端名称
-        lua_pushstring(L, "all");
-        lua_setglobal(L, "name");
-        //压入客户端标识
-        lua_pushstring(L, "");
-        lua_setglobal(L, "id");
-        luaL_dostring(L, configs.script_traverse);
-        
-        //遍历
-        for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
-            //没有客户端名称不处理
-            if(!it->second.name[0]) {
-                continue;
-            }
-            
-            //清空lua栈
-            lua_settop(L, 0);
-            //压入客户端名称
-            lua_pushstring(L, it->second.name);
-            lua_setglobal(L, "name");
-            //压入客户端标识
-            lua_pushfstring(L, "%llu", (unsigned long long)it->first.client);
-            lua_setglobal(L, "id");
-            //执行脚本
-            luaL_dostring(L, configs.script_traverse);
-        }
-        
-        //关闭虚拟机实例
-        lua_close(L);
-    }
+	if(configs.script_traverse[0]) {
+		//新建虚拟机实例
+		lua_State *L = luaL_newstate();
+		if(!L) {
+			return;
+		}
+		//初始化虚拟机
+		luaL_openlibs(L);
+
+		//执行脚本
+		//压入客户端名称
+		lua_pushstring(L, "all");
+		lua_setglobal(L, "name");
+		//压入客户端标识
+		lua_pushstring(L, "");
+		lua_setglobal(L, "id");
+		luaL_dostring(L, configs.script_traverse);
+		
+		//遍历
+		for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
+			//没有客户端名称不处理
+			if(!it->second.name[0]) {
+				continue;
+			}
+
+			//清空lua栈
+			lua_settop(L, 0);
+			//压入客户端名称
+			lua_pushstring(L, it->second.name);
+			lua_setglobal(L, "name");
+			//压入客户端标识
+			lua_pushfstring(L, "%llu", (unsigned long long)it->first.client);
+			lua_setglobal(L, "id");
+			//执行脚本
+			luaL_dostring(L, configs.script_traverse);
+		}
+		
+		//关闭虚拟机实例
+		lua_close(L);
+	}
 }
 
 /**
@@ -897,7 +897,7 @@ int main(int argc, char **argv) {
 	}
 	
 	//启动TIMER服务
-	if(rc = uv_timer_start(&timer, on_timer_triggered, 10*1000, (60*1000-1))) {
+	if(rc = uv_timer_start(&timer, on_timer_triggered, 60*1000, (60*1000-1))) {
 		fprintf(stderr, "uv_timer_start failed %s\n", uv_strerror(rc));
 		return 1;
 	}

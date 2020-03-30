@@ -1,28 +1,16 @@
 --lua script language
+--variables: packet
 
 print("register script")
-
---packet received from client
---[[
-for i,v in ipairs(packet)
-do
-	print(v)
-end
---]]
-
-
---return the client name
---[[
-return "client"
---]]
-
 
 --packet received from client
 name = ""
 for i,v in ipairs(packet)
 do
-	name = name..v
+	name = name..string.char(v)
 end
+
+print("Registered name is: "..name)
 
 return name
 
