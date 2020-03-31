@@ -23,7 +23,6 @@ using namespace std;
 #define INVALID_SOCKET		0
 #endif
 
-#define MAX_CLIENTS	10
 #define CONNECT_PORT	4056
 
 #if defined ( WIN32 )
@@ -42,18 +41,18 @@ static void *ThreadTest(void *arg)
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
-	sock = socket(AF_INET, SOCK_STREAM, 0);
+	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if(sock < 0) {
 		fprintf(stderr, "Socket error.\n");
 		return(0);
 	}
 
-#if defined ( _WIN32 )
-	addr.sin_addr.S_un.S_addr = htonl(inet_addr("127.0.0.1"));
-#elif defined ( __linux )
-	addr.sin_addr.s_addr = htonl(inet_addr("127.0.0.1"));
-#endif
 	addr.sin_family = AF_INET;
+#if defined ( _WIN32 )
+	addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
+#elif defined ( __linux )
+	addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+#endif
 	addr.sin_port = htons(CONNECT_PORT);
 
 	if(connect(sock, (SOCKADDR*)&addr, sizeof(SOCKADDR)) < 0) {
@@ -74,11 +73,11 @@ static void *ThreadTest(void *arg)
 	i  = sprintf(message,		"Client: ");
 	i += sprintf(message + i,	"%d.\n", (unsigned long long)arg);
 
-	send(sock, message, strlen(message)+1, 0);
+	send(sock, message, strlen(message) + 1, 0);
 #if defined ( WIN32 )
-	Sleep(1);
+	Sleep(1000);
 #else
-	usleep(1*1000);
+	sleep(1);
 #endif
 
 	while(1)
@@ -88,11 +87,11 @@ static void *ThreadTest(void *arg)
 		i += sprintf(message + i,	"%d ", (unsigned long long)arg);
 		i += sprintf(message + i,	"This is my message.\n");
 
-		send(sock, message, strlen(message)+1, 0);
+		send(sock, message, strlen(message) + 1, 0);
 #if defined ( WIN32 )
-		Sleep(2);
+		Sleep(1000);
 #else
-		usleep(2*1000);
+		sleep(1);
 #endif
 	}
 
@@ -117,18 +116,31 @@ int main(int argc, char **argv) {
 	pthread_t thread;
 	pthread_attr_t thread_attr;
 #endif
-
-	for(int i=0; i<MAX_CLIENTS; i++) {
+	
+	//判断参数有效性
+	if(argc != 2) {
+		printf("You need input the amount of clients.\n");
+		return 0;
+	}
+	
+	//客户端数量
+	int clients = atoi(argv[1]);
+	if((clients < 1) || (clients > 1000)) {
+		printf("Amount invalid.\n");
+		return 0;
+	}
+	
+	for(int i=0; i<clients; i++) {
 #if defined ( WIN32 )
 		hThread = CreateThread(NULL, 0, ThreadTest, (LPVOID)i, 0, NULL);
 		CloseHandle(hThread);
-		Sleep(1);
+		Sleep(10);
 #else
 		pthread_attr_init(&thread_attr);
 		pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
 		pthread_create(&thread, &thread_attr, ThreadTest, (void *)i);
 		pthread_attr_destroy(&thread_attr);
-		usleep(1*1000);
+		usleep(10*1000);
 #endif
 	}
 

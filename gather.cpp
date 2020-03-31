@@ -6,8 +6,10 @@
 #include <time.h>
 #if defined(WIN32)
 #include <Ws2tcpip.h>
+#include <windows.h>
 #else
-#include <arpa/inet.h> 
+#include <arpa/inet.h>
+#include <unistd.h>
 #endif
 #include "uv.h"
 #include "lua.hpp"
@@ -25,8 +27,8 @@ typedef struct __uni_configs {
 	unsigned long max_clients;
 	char script_registered[512*1024];
 	char script_heartbeat[512*1024];
-	char script_linked[512*1024];
 	char script_traverse[512*1024];
+	char script_linked[512*1024];
 } uni_configs;
 
 typedef struct __uni_runs {
@@ -104,13 +106,16 @@ static void alloc_buffer(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
   */
 static void on_after_close(uv_handle_t *handle) {
 	uni_id id;
+
 	id.client = (uv_stream_t *)handle;
+	uv_mutex_lock(&runs.lock);
 	//在map中查找是否有此client
 	map<uni_id, uni_value>::iterator it = clients.find(id);
 	if(it != clients.end()) {
 		//查找到，标记回收
 		clients[id].gc = 0xff;
 	}
+	uv_mutex_unlock(&runs.lock);
 	
 	free(handle);
 }
@@ -640,6 +645,10 @@ static void on_after_traverse(uv_work_t *req, int status) {
 			if(!it->second.name[0]) {
 				continue;
 			}
+			//已被标记待回收不处理
+			if(it->second.gc) {
+				continue;
+			}
 
 			//清空lua栈
 			lua_settop(L, 0);
@@ -662,34 +671,50 @@ static void on_after_traverse(uv_work_t *req, int status) {
   * @brief  遍历在线客户端，强制下线超时的客户端
   */
 static void on_traverse(uv_work_t *req) {
-	uv_mutex_lock(&runs.lock);
+	map<uni_id, uni_value> traverse;
+	
 	runs.timing = 0xff;
+	
+	uv_mutex_lock(&runs.lock);
 	
 	//关闭超时的连接
 	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
 		if(it->second.timer) {
 			it->second.timer -= 1;
 		}
-		else {
+		else if(!it->second.gc) {
 			uv_close((uv_handle_t *)it->first.client, on_after_close);
 		}
 	}
 	
-	//删除map中的无效客户端
-	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end();) {
-		if(it->second.gc) {
-			clients.erase(it++);
-		}
-		else {
-			++it;
+	uv_mutex_unlock(&runs.lock);
+	
+#if defined ( WIN32 )
+	Sleep(5*1000);
+#else
+	sleep(5);
+#endif
+	
+	uv_mutex_lock(&runs.lock);
+	
+	//筛选map中的有效客户端
+	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
+		if(!it->second.gc) {
+			traverse.insert(pair<uni_id, uni_value>(it->first, it->second));
 		}
 	}
 	
-	runs.timing = 0;
+	clients.clear();
+	swap(clients, traverse);
+	
 	uv_mutex_unlock(&runs.lock);
+	
+	traverse.clear();
 	
 	//计算当前客户端数量
 	runs.clients = clients.size();
+	
+	runs.timing = 0;
 }
 
 /**
@@ -719,9 +744,9 @@ static void on_timer_triggered(uv_timer_t *handle) {
 
 
 /**
-  * @brief  参数列表 -> 监听端口 上行管道名 超时分钟数 最大客户端数量 注册脚本 心跳脚本 连接脚本 遍历脚本
-  * .\gather.exe 4056 echo 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
-  * ./gather 4056 echo 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
+  * @brief  参数列表 -> 监听端口 上行管道名 超时分钟数 最大客户端数量 注册脚本 心跳脚本 遍历脚本 连接脚本
+  * .\gather.exe 4056 echo 5 10000 script/register.lua script/heartbeat.lua script/traverse.lua script/connect.lua
+  * ./gather 4056 echo 5 10000 script/register.lua script/heartbeat.lua script/traverse.lua script/connect.lua
   */
 int main(int argc, char **argv) {
 	struct sockaddr_in addr;
@@ -834,31 +859,9 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	
-	//脚本文件 连接判断
+	//脚本文件 客户端遍历
 	if(argc >= 8) {
 		if((fp = fopen(argv[7], "rb"))) {
-			fseek(fp,0,SEEK_END);
-			int fl = ftell(fp);
-			fseek(fp,0,SEEK_SET);
-			if((fl <= 0) || (fl >= sizeof(configs.script_linked))) {
-				fclose(fp);
-				fprintf(stderr, "Invalid script file\n");
-				return 1;
-			}
-			else {
-				if(fread(configs.script_linked, 1, fl, fp) != fl) {
-					fclose(fp);
-					fprintf(stderr, "Invalid script file\n");
-					return 1;
-				}
-				fclose(fp);
-			}
-		}
-	}
-
-	//脚本文件 客户端遍历
-	if(argc >= 9) {
-		if((fp = fopen(argv[8], "rb"))) {
 			fseek(fp,0,SEEK_END);
 			int fl = ftell(fp);
 			fseek(fp,0,SEEK_SET);
@@ -869,6 +872,28 @@ int main(int argc, char **argv) {
 			}
 			else {
 				if(fread(configs.script_traverse, 1, fl, fp) != fl) {
+					fclose(fp);
+					fprintf(stderr, "Invalid script file\n");
+					return 1;
+				}
+				fclose(fp);
+			}
+		}
+	}
+	
+	//脚本文件 连接判断
+	if(argc >= 9) {
+		if((fp = fopen(argv[8], "rb"))) {
+			fseek(fp,0,SEEK_END);
+			int fl = ftell(fp);
+			fseek(fp,0,SEEK_SET);
+			if((fl <= 0) || (fl >= sizeof(configs.script_linked))) {
+				fclose(fp);
+				fprintf(stderr, "Invalid script file\n");
+				return 1;
+			}
+			else {
+				if(fread(configs.script_linked, 1, fl, fp) != fl) {
 					fclose(fp);
 					fprintf(stderr, "Invalid script file\n");
 					return 1;
