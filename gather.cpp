@@ -105,18 +105,6 @@ static void alloc_buffer(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
   * @brief  连接已关闭
   */
 static void on_after_close(uv_handle_t *handle) {
-	uni_id id;
-
-	id.client = (uv_stream_t *)handle;
-	uv_mutex_lock(&runs.lock);
-	//在map中查找是否有此client
-	map<uni_id, uni_value>::iterator it = clients.find(id);
-	if(it != clients.end()) {
-		//查找到，标记回收
-		clients[id].gc = 0xff;
-	}
-	uv_mutex_unlock(&runs.lock);
-	
 	free(handle);
 }
 
@@ -212,8 +200,8 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
 			free(buf->base);
 			return;
 		}
-		//判断是否已经被标记回收或者已经超时
-		if((it->second.gc) || (!it->second.timer)) {
+		//判断是否已经超时
+		if(!it->second.timer) {
 			//返回未查询到对应客户端
 			pipe_write_data(it, RE_OFFLINE, NULL, 0);
 			free(buf->base);
@@ -399,8 +387,8 @@ static void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 			fprintf(stderr, "Client not in map\n");
 			return;
 		}
-		//判断是否已经被标记回收或者已经超时
-		if((it->second.gc) || (!it->second.timer)) {
+		//判断是否已经超时
+		if(!it->second.timer) {
 			free(buf->base);
 			fprintf(stderr, "Client is dropped\n");
 			return;
@@ -470,8 +458,9 @@ static void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 			//判断客户端是否在map中
 			map<uni_id, uni_value>::iterator it = clients.find(id);
 			if(it != clients.end()) {
-				uv_close((uv_handle_t *)client, NULL);
 				clients.erase(id);
+				uv_close((uv_handle_t *)client, on_after_close);
+				
 			}
 			
 			uv_mutex_unlock(&runs.lock);
@@ -573,8 +562,7 @@ static void on_new_connection(uv_stream_t *server, int status) {
 		memset(&peername, 0, sizeof(peername));
 		namelen = sizeof(peername);
 		if((rc = uv_tcp_getpeername((const uv_tcp_t *)client, &peername, &namelen))) {
-			uv_close((uv_handle_t *)client, NULL);
-			free(client);
+			uv_close((uv_handle_t *)client, on_after_close);
 			fprintf(stderr, "uv_tcp_getpeername failed: %s", uv_strerror(rc));
 			return;
 		}
@@ -586,21 +574,31 @@ static void on_new_connection(uv_stream_t *server, int status) {
 		value.port = ntohs(((struct sockaddr_in *)&peername)->sin_port);
 		value.timer = configs.timeout;
 		
-		//尝试获取互斥量
-		if(uv_mutex_trylock(&runs.lock) == 0) {
-			//将客户端加入map中
-			clients.insert(pair<uni_id, uni_value>(id, value));
+		//尝试获取锁
+		int retry = 10;
+		while(uv_mutex_trylock(&runs.lock) != 0) {
+			if(!retry) {
+				//拒绝本次连接
+				uv_close((uv_handle_t *)client, on_after_close);
+				fprintf(stderr, "on_new_connection failed to get lock");
+				return;
+			}
+			
+			retry -= 1;
+			
+#if defined ( WIN32 )
+			Sleep(10);
+#else
+			usleep(10*1000);
+#endif
 		}
-		else {
-			//正在进行垃圾回收，拒绝本次连接
-			uv_close((uv_handle_t *)client, NULL);
-			free(client);
-			return;
-		}
+
+		//将客户端加入map中
+		clients.insert(pair<uni_id, uni_value>(id, value));
 		//允许读操作
 		if((rc = uv_read_start((uv_stream_t *)client, alloc_buffer, on_read))) {
-			uv_close((uv_handle_t *)client, NULL);
 			clients.erase(id);
+			uv_close((uv_handle_t *)client, on_after_close);
 			uv_mutex_unlock(&runs.lock);
 			fprintf(stderr, "uv_read_start failed: %s", uv_strerror(rc));
 			return;
@@ -625,8 +623,7 @@ static void on_new_connection(uv_stream_t *server, int status) {
 	}
 	else {
 		//不接受客户端连接
-		uv_close((uv_handle_t *)client, NULL);
-		free(client);
+		uv_close((uv_handle_t *)client, on_after_close);
 	}
 }
 
@@ -644,16 +641,36 @@ static void on_after_traverse(uv_work_t *req, int status) {
   */
 static void on_traverse(uv_work_t *req) {
 	map<uni_id, uni_value> traverse;
-	int retry;
+	lua_State *L = NULL;
 	
 	runs.timing = 0xff;
+
+	//判断脚本有效性
+	if(configs.script_traverse[0]) {
+		//新建虚拟机实例
+		L = luaL_newstate();
+		if(L) {
+			//初始化虚拟机
+			luaL_openlibs(L);
+
+			//执行脚本
+			//压入客户端名称
+			lua_pushstring(L, "all");
+			lua_setglobal(L, "name");
+			//压入客户端标识
+			lua_pushstring(L, "");
+			lua_setglobal(L, "id");
+		}
+	}
 	
-	uv_mutex_lock(&runs.lock);
-	
-	retry = 10;
+	//获取锁
+	int retry = 10;
 	while(uv_mutex_trylock(&runs.lock) != 0) {
 		if(!retry) {
-			fprintf(stderr, "on_traverse 1 failed to get lock");
+			if(L) {
+				lua_close(L);
+			}
+			fprintf(stderr, "on_traverse failed to get lock");
 			return;
 		}
 		
@@ -665,98 +682,49 @@ static void on_traverse(uv_work_t *req) {
 		usleep(10*1000);
 #endif
 	}
-	
+
+	if(L) {
+		//执行脚本
+		luaL_dostring(L, configs.script_traverse);
+	}
+
 	//关闭超时的连接
 	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
 		if(it->second.timer) {
 			it->second.timer -= 1;
+			traverse.insert(pair<uni_id, uni_value>(it->first, it->second));
+
+			if(L) {
+				//没有客户端名称不处理
+				if(!it->second.name[0]) {
+					continue;
+				}
+				//清空lua栈
+				lua_settop(L, 0);
+				//压入客户端名称
+				lua_pushstring(L, it->second.name);
+				lua_setglobal(L, "name");
+				//压入客户端标识
+				lua_pushfstring(L, "%llu", (unsigned long long)it->first.client);
+				lua_setglobal(L, "id");
+				//执行脚本
+				luaL_dostring(L, configs.script_traverse);
+			}
 		}
-		else if(!it->second.gc) {
+		else {
 			uv_close((uv_handle_t *)it->first.client, on_after_close);
 		}
 	}
-	
-	uv_mutex_unlock(&runs.lock);
-	
-#if defined ( WIN32 )
-	Sleep(5*1000);
-#else
-	sleep(5);
-#endif
-	
-	retry = 10;
-	while(uv_mutex_trylock(&runs.lock) != 0) {
-		if(!retry) {
-			fprintf(stderr, "on_traverse 2 failed to get lock");
-			return;
-		}
-		
-		retry -= 1;
-		
-#if defined ( WIN32 )
-		Sleep(10);
-#else
-		usleep(10*1000);
-#endif
-	}
-	
-	//筛选map中的有效客户端
-	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
-		if(!it->second.gc) {
-			traverse.insert(pair<uni_id, uni_value>(it->first, it->second));
-		}
-	}
-	
+
 	clients.clear();
 	swap(clients, traverse);
 	
-	//访问脚本
-	if(configs.script_traverse[0]) {
-		//新建虚拟机实例
-		lua_State *L = luaL_newstate();
-		if(!L) {
-			return;
-		}
-		//初始化虚拟机
-		luaL_openlibs(L);
+	uv_mutex_unlock(&runs.lock);
 
-		//执行脚本
-		//压入客户端名称
-		lua_pushstring(L, "all");
-		lua_setglobal(L, "name");
-		//压入客户端标识
-		lua_pushstring(L, "");
-		lua_setglobal(L, "id");
-		luaL_dostring(L, configs.script_traverse);
-		
-		//遍历
-		for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
-			//没有客户端名称不处理
-			if(!it->second.name[0]) {
-				continue;
-			}
-			//已被标记待回收不处理
-			if(it->second.gc) {
-				continue;
-			}
-
-			//清空lua栈
-			lua_settop(L, 0);
-			//压入客户端名称
-			lua_pushstring(L, it->second.name);
-			lua_setglobal(L, "name");
-			//压入客户端标识
-			lua_pushfstring(L, "%llu", (unsigned long long)it->first.client);
-			lua_setglobal(L, "id");
-			//执行脚本
-			luaL_dostring(L, configs.script_traverse);
-		}
-		
+	if(L) {
 		//关闭虚拟机实例
 		lua_close(L);
 	}
-	
-	uv_mutex_unlock(&runs.lock);
 	
 	traverse.clear();
 	
@@ -774,6 +742,7 @@ static void on_timer_triggered(uv_timer_t *handle) {
 	
 	//上次的任务未完成，不再执行新任务
 	if(runs.timing) {
+		fprintf(stderr, "Last task not end\n");
 		return;
 	}
 	
@@ -807,7 +776,7 @@ int main(int argc, char **argv) {
 	FILE *fp;
 	int rc;
 	
-    memset((void *)&configs, 0, sizeof(configs));
+	memset((void *)&configs, 0, sizeof(configs));
 	memset((void *)&runs, 0, sizeof(runs));
 	
 	//创建事件轮询
@@ -981,7 +950,7 @@ int main(int argc, char **argv) {
 	}
 	
 	//启动TIMER服务
-	if(rc = uv_timer_start(&timer, on_timer_triggered, 60*1000, (60*1000-1))) {
+	if(rc = uv_timer_start(&timer, on_timer_triggered, 30*1000, (60*1000-1))) {
 		fprintf(stderr, "uv_timer_start failed %s\n", uv_strerror(rc));
 		return 1;
 	}

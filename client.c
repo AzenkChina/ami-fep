@@ -41,6 +41,12 @@ static void *ThreadTest(void *arg)
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
+#if defined ( WIN32 )
+	Sleep(1000);
+#else
+	sleep(1);
+#endif
+
 	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if(sock < 0) {
 		fprintf(stderr, "Socket error.\n");

@@ -1,7 +1,7 @@
 --lua script language
 --variables: client packet
 
-print("heartbeat script")
+print(os.date().."  heartbeat script")
 
 --client name
 local name = ""

@@ -1,7 +1,7 @@
 --lua script language
 --variables: packet
 
-print("register script")
+print(os.date().."  register script")
 
 --packet received from client
 name = ""
