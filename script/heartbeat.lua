@@ -20,6 +20,7 @@ end
 --confirm the heartbeat
 if(name == comp)
 then
+	print("heartbeat packet")
 	return true
 else
 	return false

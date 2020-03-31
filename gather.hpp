@@ -1,6 +1,8 @@
 #ifndef __GATHER_HPP__
 #define __GATHER_HPP__
 
+#include <stdint.h>
+
 /**
   * @brief  标识
   */
@@ -19,9 +21,9 @@ enum __flags {
   * @brief  包头
   */
 typedef struct __packet_header {
-	unsigned long long id;
+	uint64_t id;
 	char name[32];
-	enum __flags flag;
+	uint8_t flag;
 } packet_header;
 
 #endif

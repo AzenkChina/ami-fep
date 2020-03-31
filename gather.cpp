@@ -165,9 +165,10 @@ static void pipe_write_data(map<uni_id, uni_value>::iterator client, enum __flag
 	req->buf.len = sizeof(header) + size;
 	
 	//拷贝头
-	header.id = (unsigned long long)client->first.client;
+	memset(&header, 0, sizeof(header));
+	header.id = (uint64_t)client->first.client;
 	strcpy(header.name, client->second.name);
-	header.flag = flag;
+	header.flag = (uint8_t)flag;
 	memcpy(req->buf.base, &header, sizeof(header));
 	//拷贝数据
 	if(size) {
@@ -220,19 +221,19 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
 			return;
 		}
 		//判断命令
-		if(header.flag == PH_QUERY) {
+		if(header.flag == (uint8_t)PH_QUERY) {
 			//返回客户端在线
 			pipe_write_data(it, RE_ONLINE, NULL, 0);
 			free(buf->base);
 			return;
 		}
-		else if(header.flag == PH_REJECT) {
+		else if(header.flag == (uint8_t)PH_REJECT) {
 			//返回已强制下线客户端
 			pipe_write_data(it, RE_OK, NULL, 0);
 			free(buf->base);
 			return;
 		}
-		else if(header.flag == PH_TRANSMIT) {
+		else if(header.flag == (uint8_t)PH_TRANSMIT) {
 			//开始发送数据到客户端
 			uni_write *wreq = (uni_write *)malloc(sizeof(uni_write));
 			if(!wreq) {
@@ -355,7 +356,7 @@ static bool is_heartbeat(uni_register *req) {
 	lua_newtable(L);
 	lua_pushnumber(L, -1);
 	lua_rawseti(L, -2, 0);
-	for(int n=0; n<sizeof(((uni_register *)req)->it->second.name)/sizeof(char); n++) {
+	for(int n=0; n<strlen(((uni_register *)req)->it->second.name); n++) {
 		lua_pushinteger(L, ((uni_register *)req)->it->second.name[n]);
 		lua_rawseti(L, -2, n+1);
 	}
@@ -717,9 +718,9 @@ static void on_timer_triggered(uv_timer_t *handle) {
 
 
 /**
-  * @brief  参数列表 -> 监听端口 上行通道 超时分钟数 最大客户端数量 注册脚本 心跳脚本 连接脚本 遍历脚本
-  * .\gather.exe 4056 \\?\pipe\echo.sock 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
-  * ./gather 4056 /tmp/echo.sock 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
+  * @brief  参数列表 -> 监听端口 上行管道名 超时分钟数 最大客户端数量 注册脚本 心跳脚本 连接脚本 遍历脚本
+  * .\gather.exe 4056 echo 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
+  * ./gather 4056 echo 5 10000 script/register.lua script/heartbeat.lua script/connect.lua script/traverse.lua
   */
 int main(int argc, char **argv) {
 	struct sockaddr_in addr;
@@ -727,6 +728,7 @@ int main(int argc, char **argv) {
 	uv_pipe_t client;
 	uv_timer_t timer;
 	uv_connect_t connection;
+	char sock[128];
 	FILE *fp;
 	int rc;
 	
@@ -756,10 +758,17 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	else {
-		if(strlen(argv[2]) <= 0) {
+		if((strlen(argv[2]) <= 0) || ((strlen(argv[2]) + 64) > sizeof(sock))) {
 			fprintf(stderr, "Invalid parameter : sock\n");
 		}
-		uv_pipe_connect(&connection, &client, (const char *)argv[2], on_pipe_connect);
+		
+		memset(sock, 0, sizeof(sock));
+#if defined(WIN32)
+		sprintf(sock, "\\\\?\\pipe\\%s.sock", argv[2]);
+#else
+		sprintf(sock, "/tmp/%s.sock", argv[2]);
+#endif
+		uv_pipe_connect(&connection, &client, (const char *)sock, on_pipe_connect);
 	}
 	
 	//超时时间
