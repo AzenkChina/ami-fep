@@ -172,8 +172,9 @@ static void pipe_write_data(map<uni_id, uni_value>::iterator client, enum __flag
 	memcpy(req->buf.base, &header, sizeof(header));
 	//拷贝数据
 	if(size) {
-		memcpy((void *)(((char *)(req->buf.base)) + sizeof(header)), buffer, size);
-		if(rc = uv_write((uv_write_t *)req, (uv_stream_t *)runs.connection->handle, &req->buf, 1, pipe_after_write)) {
+		memcpy((void *)(sizeof(header) + ((uint64_t)(req->buf.base))), buffer, size);
+
+		if(rc = uv_write((uv_write_t *)req, runs.connection->handle, &req->buf, 1, pipe_after_write)) {
 			fprintf(stderr, "uv_write failed: %s", uv_strerror(rc));
 		}
 	}
@@ -286,7 +287,7 @@ static void on_pipe_connect(uv_connect_t *connect, int status) {
 	}
 	else {
 		runs.connection = connect;
-		uv_read_start((uv_stream_t *)connect->handle, alloc_buffer, pipe_on_read);
+		uv_read_start(runs.connection->handle, alloc_buffer, pipe_on_read);
 	}
 }
 

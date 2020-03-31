@@ -38,15 +38,42 @@ void echo_write(uv_write_t *req, int status) {
 void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 	if (nread > 0) {
 		packet_header header;
-
+		
+#if defined(WIN32)
+		//BUG 这里不清楚为什么接收到的数据报文前边多了16个无效字节
+		if(nread < (sizeof(header) + 16)) {
+#else
 		if(nread < sizeof(header)) {
+#endif
 			return;
 		}
 
 		//打印包头信息
 		memset(&header, 0, sizeof(header));
+#if defined(WIN32)
+		memcpy(&header, (void *)((uint8_t *)(buf->base) + 16), sizeof(header));
+#else
 		memcpy(&header, buf->base, sizeof(header));
-		fprintf(stderr, "Client: %s ID: %08x FLAG: %02x.\n", header.name, header.id, header.flag);
+#endif
+		fprintf(stderr, "Client: %s ID: %08x FLAG: %02x.", header.name, header.id, header.flag);
+
+		//打印包内容
+#if defined(WIN32)
+		if(nread > (sizeof(header) + 16)) {
+			fprintf(stderr, " Message: ");
+			for(int i=0; i<(nread - sizeof(header) - 16); i++) {
+				fprintf(stderr, " %02x", ((uint8_t *)(buf->base))[sizeof(header) + 16 + i]);
+			}
+		}
+#else
+		if(nread > sizeof(header)) {
+			fprintf(stderr, " Message: ");
+			for(int i=0; i<(nread - sizeof(header)); i++) {
+				fprintf(stderr, " %02x", ((uint8_t *)(buf->base))[sizeof(header) + i]);
+			}
+		}
+#endif
+		fprintf(stderr, "\n");
 
 		//如果是透传，则返回确认报文
 		if(header.flag == PH_TRANSMIT) {
