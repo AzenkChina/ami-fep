@@ -459,10 +459,24 @@ static void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 		}
 	}
 	else if (nread < 0) {
+		uni_id id;
+		
 		if (nread != UV_EOF) {
 			fprintf(stderr, "Read error %s\n", uv_err_name(nread));
 		}
-		uv_close((uv_handle_t *)client, on_after_close);
+		
+		id.client = (uv_stream_t *)client;
+		if(uv_mutex_trylock(&runs.lock) == 0) {
+			//判断客户端是否在map中
+			map<uni_id, uni_value>::iterator it = clients.find(id);
+			if(it != clients.end()) {
+				uv_close((uv_handle_t *)client, NULL);
+				clients.erase(id);
+			}
+			
+			uv_mutex_unlock(&runs.lock);
+		}
+
 	}
 
 	free(buf->base);
@@ -576,7 +590,6 @@ static void on_new_connection(uv_stream_t *server, int status) {
 		if(uv_mutex_trylock(&runs.lock) == 0) {
 			//将客户端加入map中
 			clients.insert(pair<uni_id, uni_value>(id, value));
-			uv_mutex_unlock(&runs.lock);
 		}
 		else {
 			//正在进行垃圾回收，拒绝本次连接
@@ -586,10 +599,14 @@ static void on_new_connection(uv_stream_t *server, int status) {
 		}
 		//允许读操作
 		if((rc = uv_read_start((uv_stream_t *)client, alloc_buffer, on_read))) {
-			uv_close((uv_handle_t *)client, on_after_close);
+			uv_close((uv_handle_t *)client, NULL);
+			clients.erase(id);
+			uv_mutex_unlock(&runs.lock);
 			fprintf(stderr, "uv_read_start failed: %s", uv_strerror(rc));
 			return;
 		}
+		uv_mutex_unlock(&runs.lock);
+		
 		//新客户端连接后需要的操作
 		if(configs.script_linked[0]) {
 			uni_new_client *work_req = (uni_new_client *)malloc(sizeof(*work_req));
@@ -620,7 +637,80 @@ static void on_new_connection(uv_stream_t *server, int status) {
   */
 static void on_after_traverse(uv_work_t *req, int status) {
 	free(req);
-    
+}
+
+/**
+  * @brief  遍历在线客户端，强制下线超时的客户端
+  */
+static void on_traverse(uv_work_t *req) {
+	map<uni_id, uni_value> traverse;
+	int retry;
+	
+	runs.timing = 0xff;
+	
+	uv_mutex_lock(&runs.lock);
+	
+	retry = 10;
+	while(uv_mutex_trylock(&runs.lock) != 0) {
+		if(!retry) {
+			fprintf(stderr, "on_traverse 1 failed to get lock");
+			return;
+		}
+		
+		retry -= 1;
+		
+#if defined ( WIN32 )
+		Sleep(10);
+#else
+		usleep(10*1000);
+#endif
+	}
+	
+	//关闭超时的连接
+	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
+		if(it->second.timer) {
+			it->second.timer -= 1;
+		}
+		else if(!it->second.gc) {
+			uv_close((uv_handle_t *)it->first.client, on_after_close);
+		}
+	}
+	
+	uv_mutex_unlock(&runs.lock);
+	
+#if defined ( WIN32 )
+	Sleep(5*1000);
+#else
+	sleep(5);
+#endif
+	
+	retry = 10;
+	while(uv_mutex_trylock(&runs.lock) != 0) {
+		if(!retry) {
+			fprintf(stderr, "on_traverse 2 failed to get lock");
+			return;
+		}
+		
+		retry -= 1;
+		
+#if defined ( WIN32 )
+		Sleep(10);
+#else
+		usleep(10*1000);
+#endif
+	}
+	
+	//筛选map中的有效客户端
+	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
+		if(!it->second.gc) {
+			traverse.insert(pair<uni_id, uni_value>(it->first, it->second));
+		}
+	}
+	
+	clients.clear();
+	swap(clients, traverse);
+	
+	//访问脚本
 	if(configs.script_traverse[0]) {
 		//新建虚拟机实例
 		lua_State *L = luaL_newstate();
@@ -665,47 +755,6 @@ static void on_after_traverse(uv_work_t *req, int status) {
 		//关闭虚拟机实例
 		lua_close(L);
 	}
-}
-
-/**
-  * @brief  遍历在线客户端，强制下线超时的客户端
-  */
-static void on_traverse(uv_work_t *req) {
-	map<uni_id, uni_value> traverse;
-	
-	runs.timing = 0xff;
-	
-	uv_mutex_lock(&runs.lock);
-	
-	//关闭超时的连接
-	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
-		if(it->second.timer) {
-			it->second.timer -= 1;
-		}
-		else if(!it->second.gc) {
-			uv_close((uv_handle_t *)it->first.client, on_after_close);
-		}
-	}
-	
-	uv_mutex_unlock(&runs.lock);
-	
-#if defined ( WIN32 )
-	Sleep(5*1000);
-#else
-	sleep(5);
-#endif
-	
-	uv_mutex_lock(&runs.lock);
-	
-	//筛选map中的有效客户端
-	for(map<uni_id, uni_value>::iterator it = clients.begin(); it != clients.end(); it++) {
-		if(!it->second.gc) {
-			traverse.insert(pair<uni_id, uni_value>(it->first, it->second));
-		}
-	}
-	
-	clients.clear();
-	swap(clients, traverse);
 	
 	uv_mutex_unlock(&runs.lock);
 	
