@@ -4,6 +4,7 @@
 #include <cstring>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #if defined(WIN32)
 #include <winsock2.h>
 #include <Ws2tcpip.h>
@@ -23,7 +24,8 @@ using namespace std;
 #define INVALID_SOCKET		0
 #endif
 
-#define CONNECT_PORT	4056
+static uint32_t address = 0;
+static uint16_t port = 0;
 
 #if defined ( WIN32 )
 static DWORD CALLBACK ThreadTest(PVOID arg)
@@ -55,11 +57,11 @@ static void *ThreadTest(void *arg)
 
 	addr.sin_family = AF_INET;
 #if defined ( _WIN32 )
-	addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
+	addr.sin_addr.S_un.S_addr = address;
 #elif defined ( __linux )
-	addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+	addr.sin_addr.s_addr = address;
 #endif
-	addr.sin_port = htons(CONNECT_PORT);
+	addr.sin_port = htons(port);
 
 	if(connect(sock, (SOCKADDR*)&addr, sizeof(SOCKADDR)) < 0) {
 #if defined ( _WIN32 )
@@ -76,8 +78,7 @@ static void *ThreadTest(void *arg)
 	int   i;
 
 	memset(message, 0, sizeof(message));
-	i  = sprintf(message,		"Client: ");
-	i += sprintf(message + i,	"%d.\n", (unsigned long long)arg);
+	i  = sprintf(message, "Client: %d", (unsigned long long)arg);
 
 	send(sock, message, strlen(message) + 1, 0);
 #if defined ( WIN32 )
@@ -89,15 +90,15 @@ static void *ThreadTest(void *arg)
 	while(1)
 	{
 		memset(message, 0, sizeof(message));
-		i  = sprintf(message,		"Client: ");
-		i += sprintf(message + i,	"%d ", (unsigned long long)arg);
-		i += sprintf(message + i,	"This is my message.\n");
+		i  = sprintf(message, "Client: %d ", (unsigned long long)arg);
+		i += sprintf(message + i, "This is my message.\n");
 
 		send(sock, message, strlen(message) + 1, 0);
+
 #if defined ( WIN32 )
-		Sleep(1000);
+		Sleep(1000 + rand() % 4000);
 #else
-		sleep(1);
+		usleep((1000 + rand() % 4000) * 1000);
 #endif
 	}
 
@@ -124,13 +125,27 @@ int main(int argc, char **argv) {
 #endif
 	
 	//判断参数有效性
-	if(argc != 2) {
-		printf("You need input the amount of clients.\n");
+	if(argc != 4) {
+		printf("Three args need : address port clients\n");
+		return 0;
+	}
+	
+	//主站地址
+	address = inet_addr(argv[1]);
+	if(address == INADDR_NONE) {
+		printf("Address invalid.\n");
+		return 0;
+	}
+	
+	//端口
+	port = atol(argv[2]);
+	if((port < 0) || (port > 65535)) {
+		printf("Port invalid.\n");
 		return 0;
 	}
 	
 	//客户端数量
-	int clients = atoi(argv[1]);
+	int clients = atoi(argv[3]);
 	if((clients < 1) || (clients > 1000)) {
 		printf("Amount invalid.\n");
 		return 0;

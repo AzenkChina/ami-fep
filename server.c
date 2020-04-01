@@ -5,9 +5,9 @@
 #include "gather.hpp"
 
 #if defined(WIN32)
-#define PIPENAME "\\\\?\\pipe\\echo.sock"
+#define PIPENAME "\\\\.\\pipe\\echo.gather"
 #else
-#define PIPENAME "/tmp/echo.sock"
+#define PIPENAME "/tmp/echo.gather"
 #endif
 
 uv_loop_t *loop;

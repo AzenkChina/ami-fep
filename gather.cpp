@@ -263,7 +263,8 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
 	}
 	else if (nread < 0) {
 		if (nread != UV_EOF) {
-			fprintf(stderr, "Read error %s\n", uv_err_name(nread));
+			fprintf(stderr, "Read pipe error %s\n", uv_err_name(nread));
+			uv_close((uv_handle_t *)client, NULL);
 		}
 	}
 	
@@ -274,13 +275,16 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
   * @brief  管道建立
   */
 static void on_pipe_connect(uv_connect_t *connect, int status) {
+	int rc;
 	runs.connection = (uv_connect_t *)0;
 	if(status < 0) {
 		fprintf(stderr, "Invalid pipe connection.");
 	}
 	else {
 		runs.connection = connect;
-		uv_read_start(runs.connection->handle, alloc_buffer, pipe_on_read);
+		if(rc = uv_read_start(runs.connection->handle, alloc_buffer, pipe_on_read)) {
+			fprintf(stderr, "uv_read_start failed: %s", uv_strerror(rc));
+		}
 	}
 }
 
@@ -808,9 +812,9 @@ int main(int argc, char **argv) {
 		
 		memset(sock, 0, sizeof(sock));
 #if defined(WIN32)
-		sprintf(sock, "\\\\?\\pipe\\%s.sock", argv[2]);
+		sprintf(sock, "\\\\.\\pipe\\%s.gather", argv[2]);
 #else
-		sprintf(sock, "/tmp/%s.sock", argv[2]);
+		sprintf(sock, "/tmp/%s.gather", argv[2]);
 #endif
 		uv_pipe_connect(&connection, &client, (const char *)sock, on_pipe_connect);
 	}
