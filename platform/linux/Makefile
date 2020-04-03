@@ -13,7 +13,7 @@ RM       = rm -f
 all: all-before $(BIN) all-after test
 
 clean: clean-custom
-	${RM} $(OBJ) $(BIN)
+	${RM} $(OBJ) $(BIN) server client server.o client.o
 
 $(BIN): $(OBJ)
 	$(CPP) $(LINKOBJ) -o $(BIN) $(LIBS)
@@ -46,3 +46,4 @@ client.o: client.c
 ## https://blog.csdn.net/qq_28351609/article/details/84630535
 ## https://eli.thegreenplace.net/2017/concurrent-servers-part-1-introduction/
 ## https://blog.csdn.net/u010659887/article/details/88687073
+

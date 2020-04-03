@@ -164,7 +164,7 @@ int main(int argc, char **argv) {
 	
 	//客户端数量
 	int clients = atoi(argv[3]);
-	if((clients < 1) || (clients > 1000)) {
+	if((clients < 1) || (clients > 2048)) {
 		printf("Amount invalid.\n");
 		return 0;
 	}

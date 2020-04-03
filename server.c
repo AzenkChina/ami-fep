@@ -46,14 +46,11 @@ void echo_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 		//打印包头信息
 		memset(&header, 0, sizeof(header));
 		memcpy(&header, buf->base, sizeof(header));
-		fprintf(stderr, "Client: %s ID: %08x FLAG: %02x.", header.name, header.id, header.flag);
+		fprintf(stdout, "Client: %s ID: %08x FLAG: %02x.", header.name, header.id, header.flag);
 
 		//打印包内容
 		if(nread > sizeof(header)) {
-			fprintf(stderr, " Message: ");
-			for(int i=0; i<(nread - sizeof(header)); i++) {
-				fprintf(stderr, "%c", ((uint8_t *)(buf->base))[sizeof(header) + i]);
-			}
+			fprintf(stdout, " Message: %s", &((char *)(buf->base))[sizeof(header)]);
 		}
 
 		//如果是透传，则返回确认报文
