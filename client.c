@@ -70,7 +70,7 @@ static void *ThreadTest(void *arg)
 #else
 		close(sock);
 #endif
-		fprintf(stderr, "Connect error.\n");
+		fprintf(stderr, "Client: %llu connect error.\n", (unsigned long long)arg);
 		return(0);
 	}
 
@@ -78,9 +78,18 @@ static void *ThreadTest(void *arg)
 	int   i;
 
 	memset(message, 0, sizeof(message));
-	i  = sprintf(message, "Client: %d", (unsigned long long)arg);
+	i  = sprintf(message, "Client: %llu", (unsigned long long)arg);
 
-	send(sock, message, strlen(message) + 1, 0);
+	if(send(sock, message, strlen(message) + 1, 0) != (strlen(message) + 1)) {
+#if defined ( _WIN32 )
+		closesocket(sock);
+		WSACleanup();
+#else
+		close(sock);
+#endif
+		fprintf(stderr, "Client: %llu send error.\n", (unsigned long long)arg);
+		return(0);
+	}
 #if defined ( WIN32 )
 	Sleep(1000);
 #else
@@ -93,7 +102,16 @@ static void *ThreadTest(void *arg)
 		i  = sprintf(message, "Client: %d ", (unsigned long long)arg);
 		i += sprintf(message + i, "This is my message.\n");
 
-		send(sock, message, strlen(message) + 1, 0);
+		if(send(sock, message, strlen(message) + 1, 0) != (strlen(message) + 1)) {
+#if defined ( _WIN32 )
+			closesocket(sock);
+			WSACleanup();
+#else
+			close(sock);
+#endif
+			fprintf(stderr, "Client: %llu send error.\n", (unsigned long long)arg);
+			return(0);
+		}
 
 #if defined ( WIN32 )
 		Sleep(1000 + rand() % 4000);
@@ -124,27 +142,27 @@ int main(int argc, char **argv) {
 	pthread_attr_t thread_attr;
 #endif
 	
-	//ÅĞ¶Ï²ÎÊıÓĞĞ§ĞÔ
+	//åˆ¤æ–­å‚æ•°æœ‰æ•ˆæ€§
 	if(argc != 4) {
 		printf("Three args need : address port clients\n");
 		return 0;
 	}
 	
-	//Ö÷Õ¾µØÖ·
+	//ä¸»ç«™åœ°å€
 	address = inet_addr(argv[1]);
 	if(address == INADDR_NONE) {
 		printf("Address invalid.\n");
 		return 0;
 	}
 	
-	//¶Ë¿Ú
+	//ç«¯å£
 	port = atol(argv[2]);
 	if((port < 0) || (port > 65535)) {
 		printf("Port invalid.\n");
 		return 0;
 	}
 	
-	//¿Í»§¶ËÊıÁ¿
+	//å®¢æˆ·ç«¯æ•°é‡
 	int clients = atoi(argv[3]);
 	if((clients < 1) || (clients > 1000)) {
 		printf("Amount invalid.\n");

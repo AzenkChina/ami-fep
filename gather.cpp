@@ -3,7 +3,6 @@
 #include <string>
 #include <cstring>
 #include <stdint.h>
-#include <time.h>
 #if defined(WIN32)
 #include <Ws2tcpip.h>
 #include <windows.h>
@@ -801,7 +800,7 @@ int main(int argc, char **argv) {
 	}
 	
 	//管道
-	if(rc = uv_pipe_init(loop, &client, 1)) {
+	if(rc = uv_pipe_init(loop, &client, 0)) {
 		fprintf(stderr, "uv_pipe_init failed %s\n", uv_strerror(rc));
 		return 1;
 	}
@@ -812,7 +811,7 @@ int main(int argc, char **argv) {
 		
 		memset(sock, 0, sizeof(sock));
 #if defined(WIN32)
-		sprintf(sock, "\\\\.\\pipe\\%s.gather", argv[2]);
+		sprintf(sock, "\\\\?\\pipe\\%s.gather", argv[2]);
 #else
 		sprintf(sock, "/tmp/%s.gather", argv[2]);
 #endif
