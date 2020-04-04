@@ -39,7 +39,7 @@ typedef struct __uni_runs {
 
 typedef struct __uni_id {
 	uv_stream_t *client;
-	
+
 	bool operator < (const __uni_id &other) const {
 		if((unsigned long long)client < (unsigned long long)(other.client)) {
 			return true;
@@ -114,7 +114,7 @@ static void on_after_write(uv_write_t *req, int status) {
 	if (status) {
 		fprintf(stderr, "Write error %s\n", uv_strerror(status));
 	}
-	
+
 	free(((uni_write *)req)->buf.base);
 	free(req);
 }
@@ -128,7 +128,7 @@ static void pipe_after_write(uv_write_t *req, int status) {
 	if (status) {
 		fprintf(stderr, "Write error %s\n", uv_strerror(status));
 	}
-	
+
 	free(((uni_write *)req)->buf.base);
 	free(req);
 }
@@ -143,19 +143,19 @@ static void pipe_write_data(map<uni_id, uni_value>::iterator client, enum __flag
 	if(!runs.connection) {
 		return;
 	}
-	
+
 	req = (uni_write *)malloc(sizeof(*req));
 	if(!req) {
 		return;
 	}
-	
+
 	req->buf.base = (char *)malloc(sizeof(header) + size);
 	if(!req) {
 		free(req);
 		return;
 	}
 	req->buf.len = sizeof(header) + size;
-	
+
 	//拷贝头
 	memset(&header, 0, sizeof(header));
 	header.id = (uint64_t)client->first.client;
@@ -179,7 +179,7 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
 	int rc;
 	packet_header header;
 	uni_id id;
-	
+
 	//有数据报文待读取
 	if(nread > 0) {
 		//查询对应客户端并发送数据
@@ -187,10 +187,10 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
 			free(buf->base);
 			return;
 		}
-		
+
 		memcpy(&header, buf->base, sizeof(packet_header));
 		id.client = (uv_stream_t *)header.id;
-		
+
 		map<uni_id, uni_value>::iterator it = clients.find(id);
 		if(it == clients.end()) {
 			//返回未查询到对应客户端
@@ -266,7 +266,7 @@ static void pipe_on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf
 			uv_close((uv_handle_t *)client, NULL);
 		}
 	}
-	
+
 	free(buf->base);
 }
 
@@ -381,7 +381,7 @@ static void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 	//有数据报文待读取
 	if(nread > 0) {
 		uni_id id;
-		
+
 		id.client = (uv_stream_t *)client;
 		//判断客户端是否在map中
 		map<uni_id, uni_value>::iterator it = clients.find(id);
@@ -451,11 +451,11 @@ static void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 	}
 	else if (nread < 0) {
 		uni_id id;
-		
+
 		if (nread != UV_EOF) {
 			fprintf(stderr, "Read error %s\n", uv_err_name(nread));
 		}
-		
+
 		id.client = (uv_stream_t *)client;
 		if(uv_mutex_trylock(&runs.lock) == 0) {
 			//判断客户端是否在map中
@@ -463,9 +463,9 @@ static void on_read(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
 			if(it != clients.end()) {
 				clients.erase(id);
 				uv_close((uv_handle_t *)client, on_after_close);
-				
+
 			}
-			
+
 			uv_mutex_unlock(&runs.lock);
 		}
 
@@ -535,13 +535,13 @@ static void on_new_connection(uv_stream_t *server, int status) {
         fprintf(stderr, "New connection error %s\n", uv_strerror(status));
 		return;
 	}
-	
+
 	//判断客户端是否已达上限
 	if(runs.clients >= configs.max_clients) {
 		fprintf(stderr, "Client full\n");
 		return;
 	}
-	
+
 	//生成客户端
 	uv_tcp_t *client = (uv_tcp_t *)malloc(sizeof(uv_tcp_t));
 	if(!client) {
@@ -560,7 +560,7 @@ static void on_new_connection(uv_stream_t *server, int status) {
 		int namelen;
 		uni_id id;
 		uni_value value;
-		
+
 		//获取对端的信息
 		memset(&peername, 0, sizeof(peername));
 		namelen = sizeof(peername);
@@ -576,7 +576,7 @@ static void on_new_connection(uv_stream_t *server, int status) {
 		memcpy((void *)value.ip, (const void *)&(((struct sockaddr_in *)&peername)->sin_addr), sizeof(((struct sockaddr_in *)&peername)->sin_addr));
 		value.port = ntohs(((struct sockaddr_in *)&peername)->sin_port);
 		value.timer = configs.timeout;
-		
+
 		//尝试获取锁
 		int retry = 10;
 		while(uv_mutex_trylock(&runs.lock) != 0) {
@@ -586,9 +586,9 @@ static void on_new_connection(uv_stream_t *server, int status) {
 				fprintf(stderr, "on_new_connection failed to get lock");
 				return;
 			}
-			
+
 			retry -= 1;
-			
+
 #if defined ( WIN32 )
 			Sleep(10);
 #else
@@ -607,7 +607,7 @@ static void on_new_connection(uv_stream_t *server, int status) {
 			return;
 		}
 		uv_mutex_unlock(&runs.lock);
-		
+
 		//新客户端连接后需要的操作
 		if(configs.script_linked[0]) {
 			uni_new_client *work_req = (uni_new_client *)malloc(sizeof(*work_req));
@@ -645,7 +645,7 @@ static void on_after_traverse(uv_work_t *req, int status) {
 static void on_traverse(uv_work_t *req) {
 	map<uni_id, uni_value> traverse;
 	lua_State *L = NULL;
-	
+
 	runs.timing = 0xff;
 
 	//判断脚本有效性
@@ -665,7 +665,7 @@ static void on_traverse(uv_work_t *req) {
 			lua_setglobal(L, "id");
 		}
 	}
-	
+
 	//获取锁
 	int retry = 10;
 	while(uv_mutex_trylock(&runs.lock) != 0) {
@@ -676,9 +676,9 @@ static void on_traverse(uv_work_t *req) {
 			fprintf(stderr, "on_traverse failed to get lock");
 			return;
 		}
-		
+
 		retry -= 1;
-		
+
 #if defined ( WIN32 )
 		Sleep(10);
 #else
@@ -721,19 +721,19 @@ static void on_traverse(uv_work_t *req) {
 
 	clients.clear();
 	swap(clients, traverse);
-	
+
 	uv_mutex_unlock(&runs.lock);
 
 	if(L) {
 		//关闭虚拟机实例
 		lua_close(L);
 	}
-	
+
 	traverse.clear();
-	
+
 	//计算当前客户端数量
 	runs.clients = clients.size();
-	
+
 	runs.timing = 0;
 }
 
@@ -742,13 +742,13 @@ static void on_traverse(uv_work_t *req) {
   */
 static void on_timer_triggered(uv_timer_t *handle) {
 	int rc;
-	
+
 	//上次的任务未完成，不再执行新任务
 	if(runs.timing) {
 		fprintf(stderr, "Last task not end\n");
 		return;
 	}
-	
+
 	//将轮询工作发送到其它线程
 	uv_work_t *work_req = (uv_work_t *)malloc(sizeof(*work_req));
 	if(!work_req) {
@@ -778,27 +778,27 @@ int main(int argc, char **argv) {
 	char sock[128];
 	FILE *fp;
 	int rc;
-	
+
 	memset((void *)&configs, 0, sizeof(configs));
 	memset((void *)&runs, 0, sizeof(runs));
-	
+
 	//创建事件轮询
 	loop = uv_default_loop();
-	
+
 	//判断参数有效性
 	if(argc < 7) {
 		printf("Six args need : port timeout max_clients script_registered script_heartbeat script_linked\n");
 		fprintf(stderr, "Invalid parameter amount\n");
 		return 0;
 	}
-	
+
 	//端口
 	configs.port = atoi(argv[1]);
 	if((configs.port <= 1023) || (configs.port > 65535)) {
 		fprintf(stderr, "Invalid parameter : port\n");
 		return 1;
 	}
-	
+
 	//管道
 	if(rc = uv_pipe_init(loop, &client, 0)) {
 		fprintf(stderr, "uv_pipe_init failed %s\n", uv_strerror(rc));
@@ -808,7 +808,7 @@ int main(int argc, char **argv) {
 		if((strlen(argv[2]) <= 0) || ((strlen(argv[2]) + 64) > sizeof(sock))) {
 			fprintf(stderr, "Invalid parameter : sock\n");
 		}
-		
+
 		memset(sock, 0, sizeof(sock));
 #if defined(WIN32)
 		sprintf(sock, "\\\\?\\pipe\\%s.gather", argv[2]);
@@ -817,21 +817,21 @@ int main(int argc, char **argv) {
 #endif
 		uv_pipe_connect(&connection, &client, (const char *)sock, on_pipe_connect);
 	}
-	
+
 	//超时时间
 	configs.timeout = atoi(argv[3]);
 	if((configs.timeout <= 0) || (configs.timeout > 65535)) {
 		fprintf(stderr, "Invalid parameter : timeout\n");
 		return 1;
 	}
-	
+
 	//最大客户端数量
 	configs.max_clients = atoi(argv[4]);
 	if((configs.max_clients <= 0) || (configs.max_clients > DEFAULT_MAX_CLIENTS)) {
 		fprintf(stderr, "Invalid parameter : max_clients\n");
 		return 1;
 	}
-	
+
 	//脚本文件 注册判断
 	if((fp = fopen(argv[5], "rb"))) {
 		fseek(fp,0,SEEK_END);
@@ -855,7 +855,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Invalid script file\n");
 		return 1;
 	}
-	
+
 	//脚本文件 心跳判断
 	if((fp = fopen(argv[6], "rb"))) {
 		fseek(fp,0,SEEK_END);
@@ -879,7 +879,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Invalid script file\n");
 		return 1;
 	}
-	
+
 	//脚本文件 客户端遍历
 	if(argc >= 8) {
 		if((fp = fopen(argv[7], "rb"))) {
@@ -901,7 +901,7 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-	
+
 	//脚本文件 连接判断
 	if(argc >= 9) {
 		if((fp = fopen(argv[8], "rb"))) {
@@ -923,19 +923,19 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-    
+
 	//初始化TCP服务
 	if(rc = uv_tcp_init(loop, &server)) {
 		fprintf(stderr, "uv_tcp_init failed: %s", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	//初始化TIMER服务
 	if(rc = uv_timer_init(loop, &timer)) {
 		fprintf(stderr, "uv_timer_init failed: %s", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	//设置监听IP和PORT
 	if(rc = uv_ip4_addr("0.0.0.0", configs.port, &addr)) {
 		fprintf(stderr, "uv_ip4_addr failed: %s", uv_strerror(rc));
@@ -945,33 +945,33 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "uv_tcp_bind failed: %s", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	//开始监听
 	if(rc = uv_listen((uv_stream_t *)&server, DEFAULT_BACKLOG, on_new_connection)) {
 		fprintf(stderr, "uv_listen failed %s\n", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	//启动TIMER服务
 	if(rc = uv_timer_start(&timer, on_timer_triggered, 30*1000, (60*1000-1))) {
 		fprintf(stderr, "uv_timer_start failed %s\n", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	//初始化互斥量
 	if(rc = uv_mutex_init(&runs.lock)) {
 		fprintf(stderr, "uv_mutex_init failed %s\n", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	//开始事件轮询
 	if((rc = uv_run(loop, UV_RUN_DEFAULT))) {
 		uv_mutex_destroy(&runs.lock);
 		fprintf(stderr, "uv_run failed %s\n", uv_strerror(rc));
 		return 1;
 	}
-	
+
 	uv_mutex_destroy(&runs.lock);
-	
+
 	return 0;
 }
