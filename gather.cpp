@@ -163,12 +163,11 @@ static void pipe_write_data(map<uni_id, uni_value>::iterator client, enum __flag
 	header.flag = (uint8_t)flag;
 	memcpy(req->buf.base, &header, sizeof(header));
 	//拷贝数据
-	if(size) {
+	if(size > 0) {
 		memcpy((void *)(sizeof(header) + ((uint64_t)(req->buf.base))), buffer, size);
-
-		if(rc = uv_write((uv_write_t *)req, runs.connection->handle, &req->buf, 1, pipe_after_write)) {
-			fprintf(stderr, "uv_write failed: %s", uv_strerror(rc));
-		}
+	}
+	if(rc = uv_write((uv_write_t *)req, runs.connection->handle, &req->buf, 1, pipe_after_write)) {
+		fprintf(stderr, "uv_write failed: %s", uv_strerror(rc));
 	}
 }
 
