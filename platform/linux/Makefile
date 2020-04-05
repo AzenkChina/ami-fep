@@ -2,7 +2,8 @@ CPP      = g++
 CC       = gcc
 OBJ      = gather.o
 LINKOBJ  = gather.o
-LIBS     = -lpthread -ldl libuv.a liblua.a -s
+LIBS     = -Wl,-rpath='.' -L. -luv -llua -lpthread -ldl -s
+#LIBS     = libuv.a liblua.a -lpthread -ldl -s
 INCS     = -I"libuv" -I"liblua"
 BIN      = gather
 CFLAGS   = $(INCS) -Os

@@ -40,7 +40,7 @@ static void *ThreadTest(void *arg)
 
 retry:
 	if(err >= 5) {
-		fprintf(stderr, "Client: %llu exit of retry.\n", (unsigned long long)arg);
+		fprintf(stderr, "Client: %04llu exit of retry.\n", (unsigned long long)arg);
 #if defined ( _WIN32 )
 		closesocket(sock);
 		WSACleanup();
@@ -65,7 +65,7 @@ retry:
 #if defined ( _WIN32 )
 		WSACleanup();
 #endif
-		fprintf(stderr, "Client: %llu exit of socket error.\n", (unsigned long long)arg);
+		fprintf(stderr, "Client: %04llu exit of socket error.\n", (unsigned long long)arg);
 		return(0);
 	}
 
@@ -84,7 +84,7 @@ retry:
 #else
 		close(sock);
 #endif
-		printf("Client: %llu connect error.\n", (unsigned long long)arg);
+		printf("Client: %04llu connect error.\n", (unsigned long long)arg);
 		err += 1;
 		goto retry;
 	}
@@ -92,10 +92,10 @@ retry:
 	char message[256];
 
 	memset(message, 0, sizeof(message));
-	sprintf(message, "Client: %llu", (unsigned long long)arg);
+	sprintf(message, "Client: %04llu", (unsigned long long)arg);
 
 	if(send(sock, message, strlen(message) + 1, 0) != (strlen(message) + 1)) {
-		fprintf(stderr, "Client: %llu send error.\n", (unsigned long long)arg);
+		fprintf(stderr, "Client: %04llu send error.\n", (unsigned long long)arg);
 		err += 1;
 #if defined ( _WIN32 )
 		closesocket(sock);
@@ -113,13 +113,13 @@ retry:
 #endif
 
 	memset(message, 0, sizeof(message));
-	int n = sprintf(message, "Client: %d ", (unsigned long long)arg);
+	int n = sprintf(message, "Client: %04llu ", (unsigned long long)arg);
 	n += sprintf(message + n, "This is my message.\n");
 
 	while(1)
 	{
 		if(send(sock, message, strlen(message) + 1, 0) != (strlen(message) + 1)) {
-			printf("Client: %llu send error.\n", (unsigned long long)arg);
+			printf("Client: %04llu send error.\n", (unsigned long long)arg);
 			err += 1;
 #if defined ( _WIN32 )
 			closesocket(sock);
@@ -136,7 +136,7 @@ retry:
 #endif
 	}
 
-	fprintf(stderr, "Client: %llu exit normally.\n", (unsigned long long)arg);
+	fprintf(stderr, "Client: %04llu exit normally.\n", (unsigned long long)arg);
 #if defined ( _WIN32 )
 	closesocket(sock);
 	WSACleanup();
