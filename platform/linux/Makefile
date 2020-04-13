@@ -2,9 +2,9 @@ CPP      = g++
 CC       = gcc
 OBJ      = gather.o
 LINKOBJ  = gather.o
-LIBS     = -Wl,-rpath='.' -L. -luv -llua -lpthread -ldl -s
-#LIBS     = libuv.a liblua.a -lpthread -ldl -s
-INCS     = -I"libuv" -I"liblua"
+LIBS     = -Wl,-rpath='.' -L. -luv -lsqlite3 -llua -lpthread -ldl -s
+#LIBS     = libuv.a libsqlite3.a liblua.a -lpthread -ldl -s
+INCS     = -I"libuv" -I"libsqlite" -I"liblua"
 BIN      = gather
 CFLAGS   = $(INCS) -Os
 RM       = rm -f

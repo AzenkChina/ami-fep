@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <uv.h>
+#include "sqlite3.h"
 #include "gather.hpp"
 
 #if defined(WIN32)
@@ -109,6 +110,8 @@ void remove_sock(int sig) {
 int main() {
 	int r;
 	uv_pipe_t server;
+
+	fprintf(stdout, "sqlite3: %s.\n", 	sqlite3_libversion());
 
 	loop = uv_default_loop();
 
